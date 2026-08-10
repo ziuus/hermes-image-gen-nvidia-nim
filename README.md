@@ -2,10 +2,12 @@
 
 NVIDIA NIM image generation backend for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
-Adds NVIDIA NIM as an image generation provider in `hermes`, using NVIDIA's
-hosted OpenAI-compatible API (`integrate.api.nvidia.com`) or a self-hosted NIM
-container. Includes FLUX, Qwen-Image, and Stable Diffusion 3.5 models, all
-usable with NVIDIA's **free API credits** (no credit card required).
+Adds NVIDIA NIM as an image generation provider in `hermes`. By default it
+calls NVIDIA's **hosted genai API** (`https://ai.api.nvidia.com/v1/genai/...`),
+and it can also talk to a **self-hosted NIM container** via its OpenAI-compatible
+`/v1/images/*` API (set `NVIDIA_BASE_URL`). Includes FLUX, Qwen-Image, and
+Stable Diffusion 3.5 models, all usable with NVIDIA's **free API credits** (no
+credit card required).
 
 - Free to start — get a key at [build.nvidia.com](https://build.nvidia.com)
 - Text-to-image **and** image-to-image editing
@@ -46,9 +48,16 @@ NVIDIA_API_KEY=nvapi-...
 Optional:
 
 ```bash
-# Self-hosted NIM container (defaults to https://integrate.api.nvidia.com/v1)
+# Self-hosted NIM container. When unset, the plugin uses NVIDIA's hosted
+# genai API (ai.api.nvidia.com/v1/genai) with free credits.
 NVIDIA_BASE_URL=http://localhost:8000/v1
 ```
+
+> **Hosted access note:** NVIDIA's hosted image-gen endpoints are only enabled
+> for organizations with the **"Public API Endpoints"** permission. A valid
+> `nvapi-...` key is not enough by itself — if requests hang or return 404,
+> request that permission on the
+> [NVIDIA developer forums](https://forums.developer.nvidia.com/t/request-to-enable-public-api-endpoints-for-my-personal-organization/377873).
 
 ### Model selection
 

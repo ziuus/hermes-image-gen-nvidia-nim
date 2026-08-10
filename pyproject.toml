@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-image-gen-nvidia-nim"
-version = "0.1.0"
+version = "0.2.0"
 description = "NVIDIA NIM image generation backend for Hermes Agent (FLUX, Qwen-Image, SD 3.5)"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -143,8 +143,10 @@ class TestGenerate:
         assert res["success"] is False
         assert res["error_type"] == "auth_required"
 
+    # Self-hosted path (NVIDIA_BASE_URL set → OpenAI-compatible SDK)
     @patch.object(nvidia_nim_plugin, "save_b64_image")
-    def test_generate_success(self, mock_save, provider):
+    def test_generate_success_self_hosted(self, mock_save, provider, monkeypatch):
+        monkeypatch.setenv("NVIDIA_BASE_URL", "http://localhost:8000/v1")
         mock_client = MagicMock()
         mock_client.images.generate.return_value = _fake_response(b64=_b64_png())
         mock_save.return_value = "/tmp/cache/img.png"
@@ -159,6 +161,27 @@ class TestGenerate:
             assert res["modality"] == "text"
             assert res["image"] == "/tmp/cache/img.png"
 
+    # Hosted genai path (no NVIDIA_BASE_URL → requests to ai.api.nvidia.com)
+    @patch.object(nvidia_nim_plugin, "save_b64_image")
+    def test_generate_success_hosted(self, mock_save, provider):
+        mock_save.return_value = "/tmp/cache/img.png"
+        resp = SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {
+                "artifacts": [{"base64": _b64_png(), "finishReason": "SUCCESS"}]
+            },
+        )
+        with patch("requests.post", return_value=resp) as mock_post:
+            res = provider.generate("a red apple")
+            assert res["success"] is True
+            assert res["provider"] == "nvidia-nim"
+            assert res["modality"] == "text"
+            assert res["image"] == "/tmp/cache/img.png"
+            assert mock_post.call_args.args[0].startswith(
+                "https://ai.api.nvidia.com/v1/genai/"
+            )
+
     def test_generate_editing_unsupported(self, provider, monkeypatch):
         editing_model = next(
             m
@@ -171,13 +194,16 @@ class TestGenerate:
         assert res["error_type"] == "model_mismatch"
 
     @patch.object(nvidia_nim_plugin, "save_b64_image")
-    def test_generate_editing_supported(self, mock_save, provider, monkeypatch):
+    def test_generate_editing_supported_self_hosted(
+        self, mock_save, provider, monkeypatch
+    ):
         editing_model = next(
             m
             for m, meta in nvidia_nim_plugin._MODELS.items()
             if meta["supports_editing"]
         )
         monkeypatch.setenv("NVIDIA_IMAGE_MODEL", editing_model)
+        monkeypatch.setenv("NVIDIA_BASE_URL", "http://localhost:8000/v1")
 
         mock_client = MagicMock()
         mock_client.images.edit.return_value = _fake_response(b64=_b64_png())
@@ -194,6 +220,114 @@ class TestGenerate:
             assert res["model"] == editing_model
             assert res["image"] == "/tmp/cache/img_edit.png"
             mock_client.images.edit.assert_called_once()
+
+    @patch.object(nvidia_nim_plugin, "save_b64_image")
+    def test_generate_editing_supported_hosted(self, mock_save, provider, monkeypatch):
+        editing_model = next(
+            m
+            for m, meta in nvidia_nim_plugin._MODELS.items()
+            if meta["supports_editing"]
+        )
+        monkeypatch.setenv("NVIDIA_IMAGE_MODEL", editing_model)
+
+        mock_save.return_value = "/tmp/cache/img_edit.png"
+        resp = SimpleNamespace(
+            status_code=200,
+            text="",
+            json=lambda: {"artifacts": [{"base64": _b64_png()}]},
+        )
+        with patch("requests.post", return_value=resp) as mock_post:
+            res = provider.generate("edit this", image_url="data:image/png;base64,AA==")
+            assert res["success"] is True
+            assert res["provider"] == "nvidia-nim"
+            assert res["modality"] == "image"
+            assert res["model"] == editing_model
+            assert res["image"] == "/tmp/cache/img_edit.png"
+            sent = mock_post.call_args.kwargs["json"]
+            assert sent.get("mode") == "Image Editing"
+            assert sent["image"] == ["data:image/png;base64,AA=="]
+
+
+class TestHostedPayload:
+    def test_flux_text_to_image(self):
+        payload = nvidia_nim_plugin._build_hosted_payload(
+            "black-forest-labs/flux.1-schnell", "cat", "square"
+        )
+        assert payload["prompt"] == "cat"
+        assert payload["width"] == 1024
+        assert payload["height"] == 1024
+        assert payload["steps"] == 4
+        assert "mode" not in payload
+        assert "image" not in payload
+
+    def test_flux2_edit_mode(self):
+        payload = nvidia_nim_plugin._build_hosted_payload(
+            "black-forest-labs/flux.2-klein-4b",
+            "make it red",
+            "landscape",
+            sources=["data:image/png;base64,AA=="],
+        )
+        assert payload["mode"] == "Image Editing"
+        assert payload["image"] == ["data:image/png;base64,AA=="]
+        assert payload["width"] == 1344
+        assert payload["height"] == 768
+
+    def test_flux2_generation_mode(self):
+        payload = nvidia_nim_plugin._build_hosted_payload(
+            "black-forest-labs/flux.2-klein-4b", "cat", "square"
+        )
+        assert payload["mode"] == "Image Generation"
+
+    def test_sd35_payload(self):
+        payload = nvidia_nim_plugin._build_hosted_payload(
+            "stabilityai/stable-diffusion-3.5-large", "cat", "portrait"
+        )
+        assert payload["steps"] == 50
+        assert payload["cfg_scale"] == 5.0
+        assert payload["width"] == 768
+        assert payload["height"] == 1344
+
+    def test_qwen_edit_image_string(self):
+        payload = nvidia_nim_plugin._build_hosted_payload(
+            "qwen/qwen-image-edit",
+            "remove the hat",
+            "square",
+            sources=["data:image/png;base64,AA=="],
+        )
+        assert payload["image"] == "data:image/png;base64,AA=="
+
+
+class TestHostedExtract:
+    def test_artifacts_base64(self):
+        b64, url = nvidia_nim_plugin._extract_hosted_image(
+            {"artifacts": [{"base64": "ABC", "finishReason": "SUCCESS"}]}
+        )
+        assert b64 == "ABC"
+        assert url is None
+
+    def test_image_string(self):
+        b64, url = nvidia_nim_plugin._extract_hosted_image({"image": "ABC"})
+        assert b64 == "ABC"
+        assert url is None
+
+    def test_openai_data_b64_json(self):
+        b64, url = nvidia_nim_plugin._extract_hosted_image(
+            {"data": [{"b64_json": "ABC"}]}
+        )
+        assert b64 == "ABC"
+        assert url is None
+
+    def test_openai_data_url(self):
+        b64, url = nvidia_nim_plugin._extract_hosted_image(
+            {"data": [{"url": "https://example.com/i.png"}]}
+        )
+        assert b64 is None
+        assert url == "https://example.com/i.png"
+
+    def test_empty(self):
+        b64, url = nvidia_nim_plugin._extract_hosted_image({})
+        assert b64 is None
+        assert url is None
 
 
 class TestRegistration:
