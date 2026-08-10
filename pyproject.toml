@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-image-gen-nvidia-nim"
+version = "0.1.0"
+description = "NVIDIA NIM image generation backend for Hermes Agent (FLUX, Qwen-Image, SD 3.5)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "ziuus" }]
+keywords = ["hermes", "hermes-agent", "plugin", "image-generation", "nvidia-nim", "flux", "qwen"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Framework :: Hermes Agent",
+]
+dependencies = [
+    "openai>=1.0,<3",
+    "requests>=2.28,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0,<9",
+    "pyyaml>=6.0,<7",
+]
+
+# Hermes Agent discovers pip-installed plugins through this entry-point group.
+# The value must be a module path (not "module:register") — the plugin loader
+# imports the module and calls its register(ctx).
+[project.entry-points."hermes_agent.plugins"]
+nvidia-nim = "hermes_image_gen_nvidia_nim.plugins.image_gen.nvidia_nim"
+
+[tool.setuptools.packages.find]
+include = ["hermes_image_gen_nvidia_nim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
