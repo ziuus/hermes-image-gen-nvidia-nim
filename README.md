@@ -14,6 +14,10 @@ credit card required).
 - Hosted or self-hosted base URL
 - Integrates with `hermes tools` setup UI (`badge: free credits`)
 
+> Building this in the open — if it saves you time, a star helps others find it.
+> Found a bug, or have an idea? [Open an issue](https://github.com/ziuus/hermes-image-gen-nvidia-nim/issues).
+> New model support and backend ideas welcome.
+
 ## Install
 
 The plugin ships as a standalone repo per Hermes policy (third-party product
